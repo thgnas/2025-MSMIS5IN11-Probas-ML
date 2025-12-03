@@ -15,7 +15,7 @@ Projet pédagogique d'exploration des approches d'intelligence artificielle prob
 Le code avec le README devront être livrés dans un sous-dossier de ce dépôt pour chaque groupe 2 jours au plus tard avant la présentation
 
 ### Taille des groupes
-La taille standard d'un groupe est de 3 personnes, avec +1 pour les groupes de 2 et -1 pour les groupes de 4
+La taille standard d'un groupe est de 3 personnes, avec +1 pour les groupes de 2 et -1 pour les groupes de 4, +3 pour les soumissions individuelles
 
 ### Évaluation
 - Présentation/communication
