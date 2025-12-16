@@ -1,18 +1,11 @@
 # rendu georjon thomas et granes victor
-
-# ============================================================
-# 🎛️ CONFIGURATION : CHANGE CE NOMBRE POUR ANALYSER PLUS/MOINS DE PATIENTS
-# ============================================================
-NOMBRE_PATIENTS = 10  # ← MODIFIE CE CHIFFRE (ex: 10, 30, 50, 100...)
-# ============================================================
-
 import os
-import sys
 import json
 import webbrowser
 import pandas as pd
 import numpy as np
 import networkx as nx
+import kagglehub
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier
@@ -26,137 +19,125 @@ except Exception:
     print("[WARN] pulp non installé — l'optimisation ILP utilisera le fallback greedy. Pour installer: pip install pulp")
 
 # --- CONFIGURATION STRICTE ---
+DATASET_REF = "fkshaikh/organ-transplant-dataset"
+DISPLAY_LIMIT = 80 
 SEED = 99
 
 class MedicalEngine:
-    def __init__(self, n_patients=NOMBRE_PATIENTS):
+    def __init__(self):
         self.df = None
         self.graph = nx.DiGraph()
         self.cycles = []
         self.scaler = MinMaxScaler()
         self.top_patient = {}
-        self.n_patients = n_patients
 
     def load_and_merge(self):
-        print("1. Génération de données synthétiques...")
+        print("1. Chargement des données cliniques réelles (Kaggle)...")
         
-        # Génération directe de N patients avec données cliniques réalistes
-        np.random.seed(SEED)
-        n_patients = self.n_patients
-        
-        self.df = pd.DataFrame({
-            'sc': np.random.uniform(0.5, 5.0, n_patients),      # Créatinine sérique
-            'hemo': np.random.uniform(8, 17, n_patients),       # Hémoglobine
-            'age': np.random.randint(20, 90, n_patients),       # Âge
-            'dm': np.random.choice([0, 1], n_patients),         # Diabète
-            'bp': np.random.randint(60, 100, n_patients)        # Tension artérielle
-        })
-        
-        print(f"   > {n_patients} patients générés")
+        try:
+            path = kagglehub.dataset_download(DATASET_REF)
+            csv_files = [f for f in os.listdir(path) if f.endswith('.csv')]
+            if not csv_files: 
+                raise Exception("Pas de CSV trouvé")
+            
+            raw_df = pd.read_csv(os.path.join(path, csv_files[0]))
+            print(f"   > {len(raw_df)} profils physiologiques chargés (Base CKD).")
+            
+        except Exception as e:
+            print(f"   > Erreur Kaggle: {e}")
+            print("   > FALLBACK: Génération de données synthétiques pour test")
+            # CORRECTIF #1: Génération de fallback si Kaggle échoue
+            np.random.seed(SEED)
+            raw_df = pd.DataFrame({
+                'sc': np.random.uniform(0.5, 5.0, 100),
+                'hemo': np.random.uniform(8, 17, 100),
+                'age': np.random.randint(20, 90, 100),
+                'dm': np.random.choice([0, 1], 100),
+                'bp': np.random.randint(60, 100, 100)
+            })
 
-        print("2. Génération des données immunologiques (HLA, Anticorps, Groupes)...")
+        # Nettoyage et Robustesse
+        raw_df.columns = [c.lower().strip() for c in raw_df.columns]
+        
+        aliases = {
+            'creatinine': 'sc', 'serum_creatinine': 'sc', 's.cr': 'sc',
+            'hemoglobin': 'hemo', 'haemoglobin': 'hemo',
+            'diabetes': 'dm', 'dm': 'dm',
+            'age': 'age',
+            'bp': 'bp', 'blood_pressure': 'bp'
+        }
+        raw_df.rename(columns=aliases, inplace=True)
+        
+        cols_needed = ['sc', 'hemo', 'age', 'dm', 'bp']
+        
+        for col in cols_needed:
+            if col not in raw_df.columns:
+                print(f"   > [WARN] Colonne '{col}' manquante. Génération synthétique.")
+                np.random.seed(SEED)
+                if col == 'sc': 
+                    raw_df[col] = np.random.uniform(0.5, 5.0, len(raw_df))
+                elif col == 'hemo': 
+                    raw_df[col] = np.random.uniform(8, 17, len(raw_df))
+                elif col == 'age': 
+                    raw_df[col] = np.random.randint(20, 90, len(raw_df))
+                elif col == 'dm': 
+                    raw_df[col] = np.random.choice([0, 1], len(raw_df))
+                elif col == 'bp': 
+                    raw_df[col] = np.random.randint(60, 100, len(raw_df))
+        
+        self.df = raw_df[cols_needed].copy()
+        
+        # CORRECTIF #2: Gestion des valeurs infinies et NaN
+        self.df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        
+        imputer = SimpleImputer(strategy='median')
+        self.df[cols_needed] = imputer.fit_transform(self.df[cols_needed])
+        
+        if len(self.df) > DISPLAY_LIMIT:
+            self.df = self.df.sample(n=DISPLAY_LIMIT, random_state=SEED).reset_index(drop=True)
+
+        print("2. Fusion avec les données logistiques (Groupes Sanguins)...")
         
         np.random.seed(SEED)
-        
-        # === GROUPES SANGUINS ABO + RHÉSUS ===
         blood_types = ['O', 'A', 'B', 'AB']
-        probs = [0.45, 0.40, 0.11, 0.04]
-        rhesus = ['+', '-']
-        rhesus_probs = [0.85, 0.15]
+        probs = [0.45, 0.40, 0.11, 0.04] 
         
-        self.df['patient_blood'] = np.random.choice(blood_types, n_patients, p=probs)
-        self.df['patient_rh'] = np.random.choice(rhesus, n_patients, p=rhesus_probs)
-        
-        # === TYPAGE HLA (Human Leukocyte Antigen) ===
-        # Génération d'allèles HLA réalistes pour 3 loci principaux
-        hla_a = ['A1', 'A2', 'A3', 'A11', 'A24', 'A25', 'A26', 'A29', 'A30', 'A31', 'A32', 'A33']
-        hla_b = ['B7', 'B8', 'B13', 'B27', 'B35', 'B38', 'B44', 'B51', 'B57', 'B58', 'B60', 'B62']
-        hla_dr = ['DR1', 'DR3', 'DR4', 'DR7', 'DR11', 'DR13', 'DR15', 'DR17']
-        
-        # Chaque patient a 2 allèles par locus (héritage maternel + paternel)
-        self.df['patient_hla_a1'] = np.random.choice(hla_a, n_patients)
-        self.df['patient_hla_a2'] = np.random.choice(hla_a, n_patients)
-        self.df['patient_hla_b1'] = np.random.choice(hla_b, n_patients)
-        self.df['patient_hla_b2'] = np.random.choice(hla_b, n_patients)
-        self.df['patient_hla_dr1'] = np.random.choice(hla_dr, n_patients)
-        self.df['patient_hla_dr2'] = np.random.choice(hla_dr, n_patients)
-        
-        # === PANEL REACTIVE ANTIBODIES (PRA) ===
-        # % d'anticorps anti-HLA présents chez le patient (0-100%)
-        # Distribution réaliste: majorité <20%, minorité hypersensibilisés >80%
-        pra_distribution = np.concatenate([
-            np.random.uniform(0, 20, int(n_patients * 0.7)),    # 70% faible sensibilisation
-            np.random.uniform(20, 50, int(n_patients * 0.2)),   # 20% sensibilisation modérée
-            np.random.uniform(50, 98, int(n_patients * 0.1))    # 10% hypersensibilisés
-        ])
-        np.random.shuffle(pra_distribution)
-        self.df['patient_pra'] = pra_distribution[:n_patients]
-        
-        # === DONNEURS (30% n'en ont pas) ===
-        has_donor = np.random.choice([True, False], n_patients, p=[0.7, 0.3])
-        
-        self.df['donor_blood'] = np.where(has_donor, np.random.choice(blood_types, n_patients, p=probs), None)
-        self.df['donor_rh'] = np.where(has_donor, np.random.choice(rhesus, n_patients, p=rhesus_probs), None)
-        
-        # HLA donneurs (seulement si donneur existe)
-        self.df['donor_hla_a1'] = np.where(has_donor, np.random.choice(hla_a, n_patients), None)
-        self.df['donor_hla_a2'] = np.where(has_donor, np.random.choice(hla_a, n_patients), None)
-        self.df['donor_hla_b1'] = np.where(has_donor, np.random.choice(hla_b, n_patients), None)
-        self.df['donor_hla_b2'] = np.where(has_donor, np.random.choice(hla_b, n_patients), None)
-        self.df['donor_hla_dr1'] = np.where(has_donor, np.random.choice(hla_dr, n_patients), None)
-        self.df['donor_hla_dr2'] = np.where(has_donor, np.random.choice(hla_dr, n_patients), None)
-        
-        print(f"   > Typage HLA complet (3 loci)")
-        print(f"   > PRA moyen: {self.df['patient_pra'].mean():.1f}% (sensibilisation anticorps)")
-        print(f"   > {has_donor.sum()}/{n_patients} patients avec donneur")
+        self.df['patient_blood'] = np.random.choice(blood_types, len(self.df), p=probs)
+        self.df['donor_blood'] = np.random.choice(blood_types, len(self.df), p=probs)
         
         return True
 
     def run_ai_scoring(self):
         print("3. Algorithme de Scoring (IA)...")
+        # -> Remplacement heuristique par apprentissage supervisé
+        # Construire une cible synthétique cliniquement informée
+        # (si pas de label réel disponible dans le dataset)
+        print("   > Construction d'un label synthétique pour apprentissage supervisé...")
+        self.df['urgent_label'] = ((self.df['sc'] > 3.5) | (self.df['hemo'] < 9) | (self.df['age'] > 75) | (self.df['dm'] == 1)).astype(int)
+
         features = ['sc', 'hemo', 'age', 'dm', 'bp']
-        
-        # Pour petits échantillons (< 10 patients), utiliser formule directe
-        if len(self.df) < 10:
-            print("   > Calcul direct du score d'urgence (échantillon réduit)...")
-            # Normalisation des features
-            X_norm = self.scaler.fit_transform(self.df[features])
-            
-            # Score pondéré: Créat(60%) + ¬Hemo(20%) + Age(20%) + Diabète(10%)
-            scores = (
-                0.6 * X_norm[:, 0] +          # créatinine
-                0.2 * (1 - X_norm[:, 1]) +    # hémoglobine inversée
-                0.2 * X_norm[:, 2] +          # âge
-                0.1 * self.df['dm'].values    # diabète
-            )
-            self.df['urgency'] = (scores - scores.min()) / (scores.max() - scores.min() + 1e-12) * 100
-        else:
-            # Pour échantillons plus grands, utiliser RandomForest
-            print("   > Construction d'un label synthétique pour apprentissage supervisé...")
-            self.df['urgent_label'] = ((self.df['sc'] > 3.5) | (self.df['hemo'] < 9) | (self.df['age'] > 75) | (self.df['dm'] == 1)).astype(int)
+        X = self.df[features].copy()
+        y = self.df['urgent_label'].values
 
-            X = self.df[features].copy()
-            y = self.df['urgent_label'].values
+        # Normalisation minimale
+        X = self.scaler.fit_transform(X)
 
-            # Normalisation minimale
-            X = self.scaler.fit_transform(X)
+        # Petit split pour entraînement/validation
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED, stratify=y)
+        except Exception:
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED)
 
-            # Petit split pour entraînement/validation
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED, stratify=y)
-            except Exception:
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED)
+        clf = RandomForestClassifier(n_estimators=100, random_state=SEED)
+        clf.fit(X_train, y_train)
 
-            clf = RandomForestClassifier(n_estimators=100, random_state=SEED)
-            clf.fit(X_train, y_train)
+        # Probabilité d'urgence (score continu entre 0 et 1)
+        probs = clf.predict_proba(self.scaler.transform(self.df[features]))[:, 1]
 
-            # Probabilité d'urgence (score continu entre 0 et 1)
-            probs = clf.predict_proba(self.scaler.transform(self.df[features]))[:, 1]
+        # Convertir en score 0-100
+        self.df['urgency'] = (probs - probs.min()) / (probs.max() - probs.min() + 1e-12) * 100
 
-            # Convertir en score 0-100
-            self.df['urgency'] = (probs - probs.min()) / (probs.max() - probs.min() + 1e-12) * 100
-
-        # Top patient selon score calculé
+        # Top patient selon probabilité prédite
         idx_max = self.df['urgency'].idxmax()
         row = self.df.loc[idx_max]
         self.top_patient = {
@@ -166,83 +147,7 @@ class MedicalEngine:
             'age': int(row['age']),
             'blood': str(row['patient_blood'])
         }
-        print(f"   > Score d'urgence calculé (patient le plus urgent: #{idx_max}, score={self.top_patient['score']})")
-
-    def check_compatibility(self, donor_idx, recipient_idx):
-        """
-        Calcule la compatibilité immunologique RÉELLE entre donneur et receveur
-        basée sur les données biologiques (ABO, HLA, anticorps)
-        
-        Retourne: True si compatible, False sinon
-        """
-        donor = self.df.loc[donor_idx]
-        recipient = self.df.loc[recipient_idx]
-        
-        # === 1. COMPATIBILITÉ ABO + RHÉSUS (OBLIGATOIRE) ===
-        abo_rules = {
-            'O': ['O', 'A', 'B', 'AB'],
-            'A': ['A', 'AB'],
-            'B': ['B', 'AB'],
-            'AB': ['AB']
-        }
-        
-        if recipient['patient_blood'] not in abo_rules.get(donor['donor_blood'], []):
-            return False  # Incompatibilité ABO absolue
-        
-        # Rhésus: Rh- peut recevoir que Rh-, Rh+ peut recevoir tous
-        if recipient['patient_rh'] == '-' and donor['donor_rh'] == '+':
-            return False  # Incompatibilité Rhésus
-        
-        # === 2. CROSSMATCH HLA (REJET HYPERAIGU) ===
-        # Si le receveur a des anticorps contre les HLA du donneur = rejet immédiat
-        
-        # Collecte des HLA du donneur
-        donor_hlas = {
-            donor['donor_hla_a1'], donor['donor_hla_a2'],
-            donor['donor_hla_b1'], donor['donor_hla_b2'],
-            donor['donor_hla_dr1'], donor['donor_hla_dr2']
-        }
-        
-        # Probabilité que le patient ait des anticorps = PRA%
-        # Plus le PRA est élevé, plus le risque de crossmatch positif est grand
-        pra = recipient['patient_pra']
-        
-        # Simulation du crossmatch: probabilité de rejet basée sur PRA
-        # PRA 0% = 0% rejet, PRA 100% = ~95% rejet (jamais 100% car panels incomplets)
-        rejection_risk = pra * 0.95 / 100
-        
-        if np.random.random() < rejection_risk:
-            return False  # Crossmatch POSITIF = incompatibilité
-        
-        # === 3. COMPATIBILITÉ HLA (QUALITÉ DU MATCH) ===
-        # Compte le nombre de mismatches HLA (0 = match parfait, 6 = totalement différent)
-        
-        recipient_hlas = {
-            recipient['patient_hla_a1'], recipient['patient_hla_a2'],
-            recipient['patient_hla_b1'], recipient['patient_hla_b2'],
-            recipient['patient_hla_dr1'], recipient['patient_hla_dr2']
-        }
-        
-        # Calcul des mismatches par locus
-        hla_matches = len(donor_hlas & recipient_hlas)  # Intersection
-        hla_mismatches = 6 - hla_matches
-        
-        # Acceptation basée sur les mismatches:
-        # 0-1 mismatch: 95% accepté (excellent match)
-        # 2-3 mismatches: 70% accepté (bon match)
-        # 4-5 mismatches: 40% accepté (match moyen)
-        # 6 mismatches: 20% accepté (dernier recours)
-        
-        if hla_mismatches <= 1:
-            accept_prob = 0.95
-        elif hla_mismatches <= 3:
-            accept_prob = 0.70
-        elif hla_mismatches <= 5:
-            accept_prob = 0.40
-        else:
-            accept_prob = 0.20
-        
-        return np.random.random() < accept_prob
+        print("   > Modèle RandomForest entraîné. Exemple AUC/score non affiché (env local).")
 
     def run_game_theory(self):
         """
@@ -285,19 +190,24 @@ class MedicalEngine:
         for i in nodes:
             self.graph.add_node(i)
         
-        # Ajouter les arêtes selon compatibilité immunologique RÉELLE
+        # Ajouter les arêtes selon compatibilité ABO + facteur probabiliste
         edge_count = 0
         for i in nodes:
-            # Skip si pas de donneur (patient sur liste d'attente uniquement)
-            if pd.isna(self.df.loc[i, 'donor_blood']):
-                continue
+            d_blood = self.df.loc[i, 'donor_blood']
+            compatible_recipients = abo_rules.get(d_blood, [])
             
             for j in nodes:
                 if i == j: 
                     continue
+                    
+                p_blood = self.df.loc[j, 'patient_blood']
                 
-                # Vérification complète: ABO, Rhésus, HLA, Crossmatch, PRA
-                if self.check_compatibility(i, j):
+                # Vérifier compatibilité ABO (déterministe)
+                if p_blood not in compatible_recipients:
+                    continue
+                
+                # Facteur de compatibilité immunologique (probabiliste, 80% matching)
+                if np.random.random() <= 0.8:
                     # Poids = Score d'urgence du receveur (pour priorités)
                     weight = self.df.loc[j, 'urgency']
                     self.graph.add_edge(i, j, weight=weight)
@@ -328,8 +238,6 @@ class MedicalEngine:
         
         # Filtrer: seulement cycles de 2-3 nœuds (viables médicalement)
         valid_cycles = [c for c in cycles if 1 < len(c) <= 3]
-        # Garder la liste complète des cycles viables pour affichage (candidats)
-        self.all_valid_cycles = valid_cycles.copy()
         print(f"   > {len(valid_cycles)} cycles viables (2-3 nœuds)")
         
         # --- ÉTAPE 3: ÉVALUATION PAR UTILITÉ SOCIALE (Pareto Optimality) ---
@@ -342,12 +250,8 @@ class MedicalEngine:
             """
             total_urgency = sum(self.df.loc[n, 'urgency'] for n in cycle)
             # Bonus si cycle comporte un patient très urgent (score > 80)
-            urgency_bonus = sum(10 for n in cycle if self.df.loc[n, 'urgency'] > 80)
-            # Favoriser les cycles courts: priorité aux échanges directs (2-personnes)
-            length_bonus = 0
-            if len(cycle) == 2:
-                length_bonus = 20
-            return total_urgency + urgency_bonus + length_bonus
+            bonus = sum(10 for n in cycle if self.df.loc[n, 'urgency'] > 80)
+            return total_urgency + bonus
         
         # Trier par utilité décroissante
         valid_cycles.sort(key=cycle_social_utility, reverse=True)
@@ -443,26 +347,15 @@ class MedicalEngine:
                     # Le donneur est le nœud précédent dans le cycle
                     matched_donor = c[(idx_in_cycle - 1) % len(c)]
                     break
-
-            # Indiquer si le patient fait partie d'un cycle candidat (2-3)
-            in_any_cycle = False
-            if hasattr(self, 'all_valid_cycles') and self.all_valid_cycles:
-                for c in self.all_valid_cycles:
-                    if i in c:
-                        in_any_cycle = True
-                        break
             
             # Déterminer groupes sanguins compatibles (ce que le patient accepte)
             patient_blood = row['patient_blood']
-            donor_blood = row.get('donor_blood', None)
             compatible_donors = []
             for blood_type, can_give_to in abo_rules.items():
                 if patient_blood in can_give_to:
                     compatible_donors.append(blood_type)
             
-            # Tooltip avec infos PATIENT + DONNEUR
-            donor_info = f"Donneur: {donor_blood}" if pd.notna(donor_blood) else "Pas de donneur"
-            tooltip = f"<b>PAIRE #{i}</b><br><br><b>PATIENT:</b><br>Groupe: {patient_blood}<br>Créatinine: {float(row['sc']):.1f}<br>Age: {int(row['age'])}<br>Score Urgence: {score}/100<br><br><b>DONNEUR:</b><br>{donor_info}"
+            tooltip = f"<b>Patient Réel #{i}</b><br>Créatinine: {float(row['sc']):.1f}<br>Age: {int(row['age'])}<br>Score IA: {score}"
             
             nodes_js.append({
                 'id': int(i),
@@ -473,21 +366,16 @@ class MedicalEngine:
                 'gt_color': gt_col,
                 'cid': int(cid),
                 'group': 'saved' if i in saved_ids else 'lost',
-                'in_any_cycle': in_any_cycle,
                 'blood': patient_blood,
                 'compatible': ','.join(compatible_donors),
                 'donor': int(matched_donor) if matched_donor is not None else -1
             })
             
             # Ajouter à la base de données
-            donor_blood = row.get('donor_blood', None)
-            donor_blood_str = donor_blood if pd.notna(donor_blood) else "Aucun"
-            
             patients_data.append({
                 'id': int(i),
                 'score': score,
                 'blood': patient_blood,
-                'donor_blood': donor_blood_str,
                 'compatible': ' ou '.join(compatible_donors),
                 'age': int(row['age']),
                 'creatinine': round(float(row['sc']), 2),
@@ -504,27 +392,13 @@ class MedicalEngine:
                         idx = c.index(u)
                         if c[(idx + 1) % len(c)] == v:
                             is_sol = True
-                    except:
+                    except: 
                         pass
-
-            # Est-ce que l'arête appartient à un cycle candidat (avant sélection) ?
-            is_candidate = False
-            if hasattr(self, 'all_valid_cycles') and self.all_valid_cycles:
-                for c in self.all_valid_cycles:
-                    for i_idx in range(len(c)):
-                        uu = c[i_idx]
-                        vv = c[(i_idx + 1) % len(c)]
-                        if uu == u and vv == v:
-                            is_candidate = True
-                            break
-                    if is_candidate:
-                        break
-
+            
             edges_js.append({
                 'from': int(u), 
                 'to': int(v), 
-                'is_sol': bool(is_sol),
-                'is_candidate': bool(is_candidate)
+                'is_sol': bool(is_sol)
             })
             
         return (json.dumps(nodes_js), json.dumps(edges_js), 
@@ -542,8 +416,7 @@ class WebRenderer:
         self.n_saved = n_saved
         self.n_total = n_total
     
-    def build_html(self):
-        """Construit et retourne le HTML sans l'écrire dans un fichier"""
+    def generate(self):
         nodes = self.nodes
         edges = self.edges
         patients_data = self.patients_data
@@ -564,8 +437,8 @@ class WebRenderer:
             <tr>
                 <td>#{p['id']}</td>
                 <td><span style="color: {'#ef4444' if p['score'] > 80 else '#eab308' if p['score'] > 50 else '#22c55e'}; font-weight: bold;">{p['score']}</span>/100</td>
-                <td><b>{p['blood']}</b></td>
-                <td><span style="color: #3b82f6; font-weight: bold;">{p['donor_blood']}</span></td>
+                <td>{p['blood']}</td>
+                <td>{p['compatible']}</td>
                 <td>{p['age']} ans</td>
                 <td>{p['creatinine']}</td>
                 <td>{'🔴 OUI' if p['has_diabetes'] else '🟢 NON'}</td>
@@ -646,18 +519,13 @@ class WebRenderer:
         <div style="font-size: 10px; color: #555; margin-top: 4px;">ML + THÉORIE DES JEUX</div>
     </div>
 
-        <div class="btn-group">
+    <div class="btn-group">
         <button class="btn active" onclick="setStep(1)">1. DONNÉES</button>
         <button class="btn" onclick="setStep(2)">2. URGENCE</button>
         <button class="btn" onclick="setStep(3)">3. MATCHING</button>
         <button class="btn" onclick="setStep(4)">4. DÉTAILS</button>
         <button class="btn" onclick="setStep(5)">5. BASE DE DONNÉES</button>
     </div>
-        <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
-            <label style="font-size:11px; color:#a1a1aa;">Patients:</label>
-            <input id="patientCountInput" type="number" min="2" value="{n_tot}" style="width:80px; padding:6px; border-radius:6px; border:1px solid #27272a; background:#0b0b0c; color:#fff;">
-            <button class="btn" style="min-width:90px;" onclick="applyPatientCount()">Appliquer</button>
-        </div>
     
     <button class="info-btn" onclick="openModal('methods')">📊 Méthodologie</button>
     <button class="info-btn" onclick="openModal('urgent')">⚠️ Calcul Urgence</button>
@@ -670,7 +538,7 @@ class WebRenderer:
         <div class="card">
             <div class="stat-row">
                 <span class="stat-label">PATIENTS</span>
-                <span class="stat-val" id="displayTotal">{n_tot}</span>
+                <span class="stat-val">{n_tot}</span>
             </div>
         </div>
         <h3>Paramètres</h3>
@@ -820,8 +688,8 @@ class WebRenderer:
                         <tr>
                             <th>Patient</th>
                             <th>Score</th>
-                            <th>Gr. Patient</th>
-                            <th>Gr. Donneur</th>
+                            <th>Groupe</th>
+                            <th>Accepte</th>
                             <th>Âge</th>
                             <th>Créatinine</th>
                             <th>Diabète</th>
@@ -870,7 +738,7 @@ class WebRenderer:
     <p style="font-size:12px; line-height:1.7; color:#e4e4e7;">Pipeline complet de l'IA:
     </p>
     <h3>1. COLLECTE DE DONNÉES</h3>
-    <p style="font-size:12px;">Données synthétiques réalistes (clinique + HLA + groupes sanguins)</p>
+    <p style="font-size:12px;">Kaggle CKD (réel) + Groupes sanguins (simulé selon distribution mondiale)</p>
     <h3>2. PRÉTRAITEMENT</h3>
     <p style="font-size:12px;">Imputation, normalisation, gestion valeurs infinies</p>
     <h3>3. SCORING IA</h3>
@@ -1000,7 +868,6 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
 <script>
     const nodesRaw = {nodes};
     const edgesRaw = {edges};
-    let currentView = 1;
     const patientsRaw = {patients_data};
     
     const nodes = new vis.DataSet(nodesRaw);
@@ -1078,37 +945,7 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
         }});
     }}
 
-    function quickGen(count) {{
-        document.getElementById('patientCount').value = count;
-        regenerate();
-    }}
-
-    function regenerate() {{
-        const count = document.getElementById('patientCount').value;
-        
-        // Vérifier si on est sur le serveur Flask (localhost:5000)
-        if (window.location.hostname === 'localhost' && window.location.port === '5000') {{
-            // Mode serveur: recharger avec paramètre
-            window.location.href = '/?n=' + count;
-        }} else {{
-            // Mode fichier HTML: afficher commande à copier
-            const cmd = `C:/Users/33783/anaconda3/python.exe "c:/Users/33783/Desktop/EPF5A/ml/2025-MSMIS5IN11-Probas-ML/etape 2" ${{count}}`;
-            
-            document.getElementById('commandText').textContent = cmd;
-            document.getElementById('commandOutput').style.display = 'block';
-            
-            // Copie automatique dans le presse-papier
-            navigator.clipboard.writeText(cmd).then(() => {{
-                const output = document.getElementById('commandOutput');
-                output.innerHTML = '<div style="color: #22c55e;">✅ Commande copiée ! Colle-la dans ton terminal (Ctrl+V)</div><div style="margin-top: 4px; color: #fff; user-select: all;">' + cmd + '</div>';
-            }}).catch(() => {{
-                document.getElementById('commandOutput').style.display = 'block';
-            }});
-        }}
-    }}
-
     function setStep(step) {{
-        currentView = step;
         document.querySelectorAll('.btn').forEach((b, i) => b.classList.toggle('active', i === step-1));
         document.querySelectorAll('.story-text').forEach((d, i) => d.classList.toggle('active', i === step-1));
         
@@ -1122,7 +959,7 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
         if(step === 1) {{
             allNodes.forEach(n => {{ n.color = '#3f3f46'; n.size = 8; n.shadow = false; }});
             allEdges.forEach(e => {{ e.hidden = false; e.color = {{color:'#333', opacity: 0.1}}; e.width=0.5; }});
-            legend.innerHTML = '<b>Step 1: Données</b><br><span class="dot" style="background:#3f3f46"></span>Paire (Patient + Donneur)';
+            legend.innerHTML = '<b>Step 1: Données</b><br><span class="dot" style="background:#3f3f46"></span>Patient';
         }}
         
         if(step === 2) {{
@@ -1132,29 +969,15 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
         }}
         
         if(step === 3) {{
-            // Matching view: show only cycle edges (candidates + validated)
             allNodes.forEach(n => {{ 
-                if(n.cid > -1) {{
-                    n.hidden = false;
-                    n.color = '#00d2ff';
-                    n.size = 16;
-                    // keep label for validated nodes
-                }} else if(n.in_any_cycle) {{
-                    n.hidden = false;
-                    n.color = '#93c5fd';
-                    n.size = 6;
-                    n.label = '';
-                }} else {{
-                    // hide irrelevant nodes to reduce clutter
-                    n.hidden = true;
-                }}
+                if(n.cid > -1) {{ n.color = n.gt_color; n.size = 18; n.shadow = true; }}
+                else {{ n.color = '#18181b'; n.size = 3; n.shadow = false; }}
             }});
             allEdges.forEach(e => {{
-                if(e.is_sol) {{ e.hidden = false; e.color = {{color:'#00d2ff', opacity:0.95}}; e.width=2; }}
-                else if(e.is_candidate) {{ e.hidden = false; e.color = {{color:'#93c5fd', opacity:0.4}}; e.width=1; }}
+                if(e.is_sol) {{ e.hidden = false; e.color = {{color:'#00d2ff', opacity:0.8}}; e.width=2; }}
                 else {{ e.hidden = true; }}
             }});
-            legend.innerHTML = '<b>Step 3: Matching</b><br><span class="dot" style="background:#00d2ff"></span>Cycle validé &nbsp; <span class="dot" style="background:#93c5fd"></span>Cycle candidat';
+            legend.innerHTML = '<b>Step 3: Matching</b><br><span class="dot" style="background:#00d2ff"></span>Cycle Assigné';
         }}
         
         if(step === 4) {{
@@ -1173,8 +996,16 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
 </body>
 </html>"""
         
-        # NOTE: rendu HTML délégué à la génération finale ci-dessous (évite doublons)
-        # Le fichier sera généré une seule fois plus bas.
+        output_file = "kidney_hybrid_dashboard.html"
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"✅ Site généré v7.0 avec base de données: {output_file}")
+        
+        try:
+            webbrowser.open(output_file)
+        except Exception as e:
+            print(f"Impossible d'ouvrir le navigateur: {e}")
+            print(f"Ouvrez manuellement: {os.path.abspath(output_file)}")
         
         html = f"""<!DOCTYPE html>
 <html>
@@ -1231,9 +1062,6 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
         
         .warning-box {{ background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; padding: 10px; border-radius: 4px; font-size: 11px; }}
         
-        .quick-btn {{ flex: 1; background: #18181b; border: 1px solid #27272a; color: #a1a1aa; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; transition: 0.2s; }}
-        .quick-btn:hover {{ background: #27272a; color: #fff; border-color: #3b82f6; }}
-        
         @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(5px); }} to {{ opacity: 1; transform: translateY(0); }} }}
     </style>
 </head>
@@ -1243,29 +1071,6 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
     <div>
         <h1>🏥 KIDNEY MATCH v6.0</h1>
         <div style="font-size: 10px; color: #555; margin-top: 4px;">ML + THÉORIE DES JEUX</div>
-    </div>
-
-    <!-- CONTRÔLE NOMBRE DE PATIENTS -->
-    <div class="card" style="margin-top: 10px;">
-        <h3 style="margin-top: 0;">🎛️ Nombre de Patients</h3>
-        <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="number" id="patientCount" value="{n_tot}" min="5" max="200" 
-                   style="flex: 1; background: #18181b; border: 1px solid #3b82f6; color: #fff; padding: 8px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 14px; font-weight: bold;">
-            <button onclick="regenerate()" 
-                    style="background: #3b82f6; border: none; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">
-                GÉNÉRER
-            </button>
-        </div>
-        <div id="commandOutput" style="display: none; margin-top: 8px; background: #000; border: 1px solid #eab308; padding: 8px; border-radius: 4px; font-size: 10px; font-family: 'JetBrains Mono'; color: #eab308; line-height: 1.4;">
-            <div style="margin-bottom: 4px; color: #a1a1aa;">📋 Copie cette commande dans ton terminal :</div>
-            <div id="commandText" style="user-select: all; color: #fff;"></div>
-        </div>
-        <div style="display: flex; gap: 4px; margin-top: 6px;">
-            <button onclick="quickGen(10)" class="quick-btn">10</button>
-            <button onclick="quickGen(20)" class="quick-btn">20</button>
-            <button onclick="quickGen(50)" class="quick-btn">50</button>
-            <button onclick="quickGen(100)" class="quick-btn">100</button>
-        </div>
     </div>
 
     <div class="btn-group">
@@ -1289,28 +1094,8 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
             </div>
             <div class="stat-row">
                 <span class="stat-label">SOURCE</span>
-                <span class="stat-val" style="font-size:10px;">Synthétique</span>
+                <span class="stat-val" style="font-size:10px;">Kaggle CKD</span>
             </div>
-        </div>
-        
-        <h3>🔄 Principe des Échanges Croisés</h3>
-        <div class="card" style="font-size:11px; line-height:1.7; background: rgba(59, 130, 246, 0.05);">
-            <b>Chaque personne = PATIENT + DONNEUR :</b><br><br>
-            
-            <b>Patient #1</b><br>
-            • A besoin d'un rein (groupe A)<br>
-            • A un donneur volontaire (frère, groupe O)<br>
-            • ❌ Incompatibles entre eux !<br><br>
-            
-            <b>Patient #2</b><br>
-            • A besoin d'un rein (groupe O)<br>
-            • A un donneur volontaire (sœur, groupe A)<br>
-            • ❌ Incompatibles entre eux !<br><br>
-            
-            <b style="color: #22c55e;">✅ ÉCHANGE CROISÉ :</b><br>
-            • Donneur #1 (O) → Patient #2 (O)<br>
-            • Donneur #2 (A) → Patient #1 (A)<br>
-            <b>Les deux sont sauvés !</b>
         </div>
         
         <h3>Paramètres Physiologiques</h3>
@@ -1461,9 +1246,10 @@ SCORE = 0.6×Créat + 0.2×(¬Hemo) + 0.2×Age + 0.1×Diabète
     
     <h3>1. COLLECTE DE DONNÉES</h3>
     <p style="font-size:12px; line-height:1.7; color:#e4e4e7;">
-        Les données physiologiques (<b>créatinine, hémoglobine, âge, tension</b>) sont <b>générées synthétiquement</b> selon des distributions réalistes.
+        Les données physiologiques (<b>créatinine, hémoglobine, âge, tension</b>) proviennent du dataset 
+        <b>Kaggle CKD (Chronic Kidney Disease)</b>. Ces données sont <b>réelles et anonymisées</b>.
         <br><br>
-        Les <b>données immunologiques</b> (groupes sanguins ABO/Rh, typage HLA 3 loci, PRA) sont également <b>générées aléatoirement</b> selon les fréquences réelles mondiales.
+        Les <b>groupes sanguins</b> ont été simulés selon la distribution mondiale pour permettre le matching.
     </p>
     
     <h3>2. PRÉTRAITEMENT</h3>
@@ -1742,7 +1528,7 @@ SCORE = 0.6 × (Créat - min) / (max - min)
         if(step === 1) {{
             allNodes.forEach(n => {{ n.color = '#3f3f46'; n.size = 8; n.shadow = false; }});
             allEdges.forEach(e => {{ e.hidden = false; e.color = {{color:'#333', opacity: 0.1}}; e.width=0.5; }});
-            legend.innerHTML = '<b>Step 1: Données</b><br><span class="dot" style="background:#3f3f46"></span>Paire (Patient + Donneur)';
+            legend.innerHTML = '<b>Step 1: Données</b><br><span class="dot" style="background:#3f3f46"></span>Patient';
         }}
         
         if(step === 2) {{
@@ -1752,29 +1538,15 @@ SCORE = 0.6 × (Créat - min) / (max - min)
         }}
         
         if(step === 3) {{
-            // Matching view: show only cycle edges (candidates + validated)
             allNodes.forEach(n => {{ 
-                if(n.cid > -1) {{
-                    n.hidden = false;
-                    n.color = '#00d2ff';
-                    n.size = 16;
-                    // keep label for validated nodes
-                }} else if(n.in_any_cycle) {{
-                    n.hidden = false;
-                    n.color = '#93c5fd';
-                    n.size = 6;
-                    n.label = '';
-                }} else {{
-                    // hide irrelevant nodes to reduce clutter
-                    n.hidden = true;
-                }}
+                if(n.cid > -1) {{ n.color = n.gt_color; n.size = 18; n.shadow = true; }}
+                else {{ n.color = '#18181b'; n.size = 3; n.shadow = false; }}
             }});
             allEdges.forEach(e => {{
-                if(e.is_sol) {{ e.hidden = false; e.color = {{color:'#00d2ff', opacity:0.95}}; e.width=2; }}
-                else if(e.is_candidate) {{ e.hidden = false; e.color = {{color:'#93c5fd', opacity:0.4}}; e.width=1; }}
+                if(e.is_sol) {{ e.hidden = false; e.color = {{color:'#00d2ff', opacity:0.8}}; e.width=2; }}
                 else {{ e.hidden = true; }}
             }});
-            legend.innerHTML = '<b>Step 3: Matching</b><br><span class="dot" style="background:#00d2ff"></span>Cycle validé &nbsp; <span class="dot" style="background:#93c5fd"></span>Cycle candidat';
+            legend.innerHTML = '<b>Step 3: Matching</b><br><span class="dot" style="background:#00d2ff"></span>Cycle Validé';
         }}
         
         if(step === 4) {{
@@ -1787,38 +1559,11 @@ SCORE = 0.6 × (Créat - min) / (max - min)
         edges.update(allEdges);
     }}
     
-    function applyPatientCount() {{
-        let n = parseInt(document.getElementById('patientCountInput').value) || nodesRaw.length;
-        n = Math.max(2, Math.min(nodesRaw.length, n));
-        // take first n patients from the original nodesRaw order
-        const filteredNodes = nodesRaw.slice(0, n).map(n => Object.assign({{hidden:false}}, n));
-        const ids = new Set(filteredNodes.map(x => x.id));
-        const filteredEdges = edgesRaw.filter(e => ids.has(e.from) && ids.has(e.to));
-
-        // replace datasets
-        nodes.clear();
-        edges.clear();
-        nodes.add(filteredNodes);
-        edges.add(filteredEdges);
-
-        // update small stats in sidebar if present
-        const totalSpan = document.getElementById('displayTotal');
-        if(totalSpan) totalSpan.innerText = String(n);
-
-        // reapply current view styles
-        setStep(currentView);
-    }}
-    
     setStep(1);
 </script>
 
 </body>
 </html>"""
-        return html
-    
-    def generate(self):
-        """Génère le HTML et l'écrit dans un fichier"""
-        html = self.build_html()
         
         output_file = "kidney_hybrid_dashboard.html"
         with open(output_file, "w", encoding="utf-8") as f:
@@ -1833,18 +1578,14 @@ SCORE = 0.6 × (Créat - min) / (max - min)
             print(f"Ouvrez manuellement le fichier: {os.path.abspath(output_file)}")
 
 if __name__ == "__main__":
-    print(f"🔧 Nombre de patients: {NOMBRE_PATIENTS}")
-    print(f"   (Pour changer: modifie NOMBRE_PATIENTS en ligne 6)\n")
-    
     try:
-        eng = MedicalEngine()  # Utilise NOMBRE_PATIENTS par défaut
+        eng = MedicalEngine()
         success = eng.load_and_merge()
         if success:
             eng.run_ai_scoring()
             eng.run_game_theory()
             data = eng.export()
             WebRenderer(*data).generate()
-            print("\n🌐 Ouverture du navigateur...")
         else:
             print("Échec du chargement des données")
     except Exception as e:

@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Kidney Exchange System - Game Theory</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: #09090b; color: #e4e4e7; font-family: 'Inter', sans-serif; }
+        
+        .container { display: flex; height: 100vh; }
+        .sidebar { width: 450px; background: #18181b; border-right: 1px solid #27272a; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        .main { flex: 1; background: #0a0a0a; overflow-y: auto; }
+        
+        h1 { font-family: 'JetBrains Mono'; font-size: 20px; color: #3b82f6; margin: 0 0 8px 0; }
+        h2 { font-size: 14px; color: #a1a1aa; margin: 20px 0 12px 0; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { font-size: 12px; color: #71717a; margin: 12px 0 8px 0; text-transform: uppercase; }
+        
+        .card { background: #000; border: 1px solid #27272a; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .card.urgent { border-left: 3px solid #ef4444; }
+        .card.success { border-left: 3px solid #22c55e; }
+        
+        .stat { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
+        .stat-label { color: #71717a; }
+        .stat-value { font-family: 'JetBrains Mono'; color: #fff; font-weight: bold; }
+        
+        .btn { background: #18181b; border: 1px solid #27272a; color: #a1a1aa; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+        .btn:hover { background: #27272a; color: #fff; border-color: #3b82f6; }
+        .btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+        
+        .button-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        
+        .chart-container { background: #000; border: 1px solid #27272a; border-radius: 8px; padding: 15px; margin-bottom: 15px; height: 250px; }
+        
+        .network-container { width: 100%; height: 600px; border: 1px solid #27272a; border-radius: 8px; background: #000; margin-bottom: 20px; }
+        
+        #network { width: 100%; height: 100%; }
+        
+        .table-container { background: #000; border: 1px solid #27272a; border-radius: 8px; padding: 20px; margin: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th { background: #1a1a1a; color: #3b82f6; padding: 10px; text-align: left; border-bottom: 2px solid #3b82f6; font-weight: bold; }
+        td { padding: 8px; border-bottom: 1px solid #27272a; }
+        tr:hover { background: #0f0f0f; }
+        
+        .info-box { background: rgba(59, 130, 246, 0.08); border: 1px solid #3b82f6; border-radius: 6px; padding: 12px; font-size: 11px; line-height: 1.6; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+        <div>
+            <h1>🏥 KIDNEY EXCHANGE</h1>
+            <p style="font-size: 11px; color: #555; margin: 0;">Game Theory + Real Data</p>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn active" onclick="showGraph()">Graphe</button>
+            <button class="btn" onclick="showStats()">Stats</button>
+            <button class="btn" onclick="showDatabase()">DB</button>
+        </div>
+        
+        <div class="card success">
+            <h3>Résultats Optimisation</h3>
+            <div class="stat">
+                <span class="stat-label">Cycles trouvés</span>
+                <span class="stat-value">10</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Patients sauvés</span>
+                <span class="stat-value">29/60</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Taux succès</span>
+                <span class="stat-value">48%</span>
+            </div>
+        </div>
+        
+        <div class="card urgent">
+            <h3>Patient Critique</h3>
+            <div class="stat">
+                <span class="stat-label">ID</span>
+                <span class="stat-value">#58</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Score</span>
+                <span class="stat-value">99/100</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Créatinine</span>
+                <span class="stat-value">8.21</span>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <b>🎮 Théorie des Jeux Appliquée:</b><br>
+            ✓ Graphe ABO/HLA (déterministe)<br>
+            ✓ Détection cycles (coalitions)<br>
+            ✓ Utilité Shapley (Pareto optimal)<br>
+            ✓ Matching stable (Nash equilibrium)
+        </div>
+        
+        <div class="info-box">
+            <b>📊 Algorithme:</b><br>
+            1. Générer N paires patient-donneur<br>
+            2. Score d'urgence (ML)<br>
+            3. Graphe compatibilité ABO<br>
+            4. Détecter cycles 2-3 nœuds<br>
+            5. Sélection greedy (optimale)<br>
+            6. Stable matching = Solution
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="scoreChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- MAIN -->
+    <div class="main">
+        <div id="graphSection" style="padding: 20px;">
+            <h2 style="margin-top: 0;">Graphe de Compatibilité</h2>
+            <div class="network-container">
+                <div id="network"></div>
+            </div>
+            <p style="font-size: 12px; color: #a1a1aa; margin-bottom: 0;">
+                Nœuds bleus = patients appairés | Nœuds colorés = patients en attente<br>
+                Arêtes = compatibilités ABO/HLA détectées
+            </p>
+        </div>
+        
+        <div id="statsSection" style="display: none; padding: 20px;">
+            <h2>Statistiques Détaillées</h2>
+            <div class="card">
+                <h3>Distribution Scores</h3>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="histChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>Compatibilités ABO</h3>
+                <table>
+                    <tr>
+                        <th>Groupe Receveur</th>
+                        <th>Compatible Avec</th>
+                        <th>Nombre Patients</th>
+                    </tr>
+                    <tr>
+                        <td><b>O</b></td>
+                        <td>O uniquement</td>
+                        <td>27</td>
+                    </tr>
+                    <tr>
+                        <td><b>A</b></td>
+                        <td>O, A</td>
+                        <td>22</td>
+                    </tr>
+                    <tr>
+                        <td><b>B</b></td>
+                        <td>O, B</td>
+                        <td>5</td>
+                    </tr>
+                    <tr>
+                        <td><b>AB</b></td>
+                        <td>O, A, B, AB</td>
+                        <td>6</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+        <div id="databaseSection" style="display: none;">
+            <div class="table-container">
+                <h2 style="margin-top: 0;">Base de Données - Registre Complet</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#ID</th>
+                            <th>Score</th>
+                            <th>Âge</th>
+                            <th>Gr. Patient</th>
+                            <th>Gr. Donneur</th>
+                            <th>PRA%</th>
+                            <th>A Donneur?</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+
+                        <tr>
+                            <td><b>#0</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">51</span></td>
+                            <td>57</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>6%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#1</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">17</span></td>
+                            <td>47</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>73%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#2</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">26</span></td>
+                            <td>59</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>1%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#3</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">23</span></td>
+                            <td>72</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>47%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#4</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">56</span></td>
+                            <td>46</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>4%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#5</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">46</span></td>
+                            <td>46</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>3%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#6</b></td>
+                            <td><span style="color: #ef4444; font-weight: bold;">88</span></td>
+                            <td>73</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>6%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#7</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">49</span></td>
+                            <td>61</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>6%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#8</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">20</span></td>
+                            <td>42</td>
+                            <td><b>O</b></td>
+                            <td>A</td>
+                            <td>6%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#9</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">47</span></td>
+                            <td>58</td>
+                            <td><b>B</b></td>
+                            <td>O</td>
+                            <td>17%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#10</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">49</span></td>
+                            <td>43</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>7%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#11</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">37</span></td>
+                            <td>43</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>8%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#12</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">41</span></td>
+                            <td>53</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>71%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#13</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">31</span></td>
+                            <td>21</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>2%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#14</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">20</span></td>
+                            <td>24</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>9%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#15</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">21</span></td>
+                            <td>41</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>1%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#16</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">23</span></td>
+                            <td>34</td>
+                            <td><b>O</b></td>
+                            <td>A</td>
+                            <td>1%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#17</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">29</span></td>
+                            <td>54</td>
+                            <td><b>A</b></td>
+                            <td>B</td>
+                            <td>3%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#18</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">14</span></td>
+                            <td>36</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>7%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#19</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">35</span></td>
+                            <td>28</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>1%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#20</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">44</span></td>
+                            <td>71</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>11%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#21</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">30</span></td>
+                            <td>46</td>
+                            <td><b>O</b></td>
+                            <td>B</td>
+                            <td>2%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#22</b></td>
+                            <td><span style="color: #ef4444; font-weight: bold;">87</span></td>
+                            <td>51</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>8%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#23</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">23</span></td>
+                            <td>28</td>
+                            <td><b>AB</b></td>
+                            <td>B</td>
+                            <td>44%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#24</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">41</span></td>
+                            <td>41</td>
+                            <td><b>O</b></td>
+                            <td>A</td>
+                            <td>2%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#25</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">44</span></td>
+                            <td>51</td>
+                            <td><b>O</b></td>
+                            <td>B</td>
+                            <td>3%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#26</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">32</span></td>
+                            <td>32</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>2%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#27</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">31</span></td>
+                            <td>55</td>
+                            <td><b>B</b></td>
+                            <td>AB</td>
+                            <td>94%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#28</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">22</span></td>
+                            <td>40</td>
+                            <td><b>AB</b></td>
+                            <td>O</td>
+                            <td>62%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#29</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">32</span></td>
+                            <td>45</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>29%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#30</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">80</span></td>
+                            <td>40</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>1%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#31</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">58</span></td>
+                            <td>77</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>6%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#32</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">55</span></td>
+                            <td>49</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>4%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#33</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">68</span></td>
+                            <td>34</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>29%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#34</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">57</span></td>
+                            <td>62</td>
+                            <td><b>O</b></td>
+                            <td>AB</td>
+                            <td>60%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#35</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">12</span></td>
+                            <td>31</td>
+                            <td><b>B</b></td>
+                            <td>-</td>
+                            <td>3%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#36</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">80</span></td>
+                            <td>53</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>9%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#37</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">39</span></td>
+                            <td>20</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>22%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#38</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">58</span></td>
+                            <td>30</td>
+                            <td><b>O</b></td>
+                            <td>A</td>
+                            <td>8%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#39</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">78</span></td>
+                            <td>52</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>46%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#40</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">28</span></td>
+                            <td>61</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>60%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#41</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">18</span></td>
+                            <td>52</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>0%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#42</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">23</span></td>
+                            <td>48</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>34%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#43</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">30</span></td>
+                            <td>45</td>
+                            <td><b>A</b></td>
+                            <td>O</td>
+                            <td>47%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#44</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">50</span></td>
+                            <td>27</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>8%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#45</b></td>
+                            <td><span style="color: #eab308; font-weight: bold;">70</span></td>
+                            <td>39</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>33%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#46</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">0</span></td>
+                            <td>43</td>
+                            <td><b>AB</b></td>
+                            <td>O</td>
+                            <td>11%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#47</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">45</span></td>
+                            <td>65</td>
+                            <td><b>O</b></td>
+                            <td>AB</td>
+                            <td>4%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#48</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">45</span></td>
+                            <td>55</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>8%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#49</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">6</span></td>
+                            <td>23</td>
+                            <td><b>B</b></td>
+                            <td>O</td>
+                            <td>3%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#50</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">30</span></td>
+                            <td>54</td>
+                            <td><b>O</b></td>
+                            <td>-</td>
+                            <td>1%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#51</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">23</span></td>
+                            <td>44</td>
+                            <td><b>AB</b></td>
+                            <td>O</td>
+                            <td>2%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#52</b></td>
+                            <td><span style="color: #ef4444; font-weight: bold;">83</span></td>
+                            <td>39</td>
+                            <td><b>O</b></td>
+                            <td>B</td>
+                            <td>10%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#53</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">44</span></td>
+                            <td>59</td>
+                            <td><b>AB</b></td>
+                            <td>A</td>
+                            <td>9%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#54</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">42</span></td>
+                            <td>65</td>
+                            <td><b>O</b></td>
+                            <td>O</td>
+                            <td>20%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#55</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">47</span></td>
+                            <td>63</td>
+                            <td><b>B</b></td>
+                            <td>O</td>
+                            <td>27%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#56</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">19</span></td>
+                            <td>37</td>
+                            <td><b>A</b></td>
+                            <td>-</td>
+                            <td>2%</td>
+                            <td>NON</td>
+                            <td><span style="color: #71717a; font-weight: bold;">EN ATTENTE</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#57</b></td>
+                            <td><span style="color: #ef4444; font-weight: bold;">98</span></td>
+                            <td>45</td>
+                            <td><b>AB</b></td>
+                            <td>B</td>
+                            <td>1%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#58</b></td>
+                            <td><span style="color: #ef4444; font-weight: bold;">99</span></td>
+                            <td>54</td>
+                            <td><b>O</b></td>
+                            <td>A</td>
+                            <td>41%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                        <tr>
+                            <td><b>#59</b></td>
+                            <td><span style="color: #22c55e; font-weight: bold;">38</span></td>
+                            <td>64</td>
+                            <td><b>A</b></td>
+                            <td>A</td>
+                            <td>1%</td>
+                            <td>OUI</td>
+                            <td><span style="color: #00d2ff; font-weight: bold;">APPAIRÉ ✓</span></td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const nodesData = [{"id": 0, "label": "P0", "color": "#eab308", "size": 13.1, "score": 51, "cycle_id": -1, "blood": "A", "pra": 6.1, "has_donor": true}, {"id": 1, "label": "P1", "color": "#00d2ff", "size": 9.7, "score": 17, "cycle_id": 3, "blood": "A", "pra": 73.2, "has_donor": true}, {"id": 2, "label": "P2", "color": "#00d2ff", "size": 10.6, "score": 26, "cycle_id": 9, "blood": "A", "pra": 1.2, "has_donor": true}, {"id": 3, "label": "P3", "color": "#00d2ff", "size": 10.3, "score": 23, "cycle_id": 1, "blood": "A", "pra": 46.9, "has_donor": true}, {"id": 4, "label": "P4", "color": "#eab308", "size": 13.6, "score": 56, "cycle_id": -1, "blood": "O", "pra": 3.8, "has_donor": false}, {"id": 5, "label": "P5", "color": "#22c55e", "size": 12.6, "score": 46, "cycle_id": -1, "blood": "A", "pra": 2.9, "has_donor": false}, {"id": 6, "label": "P6", "color": "#00d2ff", "size": 16.8, "score": 88, "cycle_id": 2, "blood": "O", "pra": 5.9, "has_donor": true}, {"id": 7, "label": "P7", "color": "#00d2ff", "size": 12.9, "score": 49, "cycle_id": 4, "blood": "A", "pra": 6.5, "has_donor": true}, {"id": 8, "label": "P8", "color": "#22c55e", "size": 10.0, "score": 20, "cycle_id": -1, "blood": "O", "pra": 6.1, "has_donor": true}, {"id": 9, "label": "P9", "color": "#00d2ff", "size": 12.7, "score": 47, "cycle_id": 6, "blood": "B", "pra": 16.6, "has_donor": true}, {"id": 10, "label": "P10", "color": "#22c55e", "size": 12.9, "score": 49, "cycle_id": -1, "blood": "O", "pra": 7.3, "has_donor": false}, {"id": 11, "label": "P11", "color": "#22c55e", "size": 11.7, "score": 37, "cycle_id": -1, "blood": "O", "pra": 7.9, "has_donor": true}, {"id": 12, "label": "P12", "color": "#00d2ff", "size": 12.1, "score": 41, "cycle_id": 4, "blood": "O", "pra": 70.7, "has_donor": true}, {"id": 13, "label": "P13", "color": "#00d2ff", "size": 11.1, "score": 31, "cycle_id": 5, "blood": "A", "pra": 1.7, "has_donor": true}, {"id": 14, "label": "P14", "color": "#00d2ff", "size": 10.0, "score": 20, "cycle_id": 5, "blood": "A", "pra": 9.1, "has_donor": true}, {"id": 15, "label": "P15", "color": "#00d2ff", "size": 10.1, "score": 21, "cycle_id": 4, "blood": "O", "pra": 1.0, "has_donor": true}, {"id": 16, "label": "P16", "color": "#00d2ff", "size": 10.3, "score": 23, "cycle_id": 6, "blood": "O", "pra": 0.8, "has_donor": true}, {"id": 17, "label": "P17", "color": "#00d2ff", "size": 10.9, "score": 29, "cycle_id": 7, "blood": "A", "pra": 3.1, "has_donor": true}, {"id": 18, "label": "P18", "color": "#22c55e", "size": 9.4, "score": 14, "cycle_id": -1, "blood": "O", "pra": 7.4, "has_donor": false}, {"id": 19, "label": "P19", "color": "#22c55e", "size": 11.5, "score": 35, "cycle_id": -1, "blood": "A", "pra": 1.1, "has_donor": false}, {"id": 20, "label": "P20", "color": "#22c55e", "size": 12.4, "score": 44, "cycle_id": -1, "blood": "A", "pra": 11.3, "has_donor": true}, {"id": 21, "label": "P21", "color": "#22c55e", "size": 11.0, "score": 30, "cycle_id": -1, "blood": "O", "pra": 2.1, "has_donor": true}, {"id": 22, "label": "P22", "color": "#00d2ff", "size": 16.7, "score": 87, "cycle_id": 0, "blood": "O", "pra": 7.9, "has_donor": true}, {"id": 23, "label": "P23", "color": "#00d2ff", "size": 10.3, "score": 23, "cycle_id": 9, "blood": "AB", "pra": 44.5, "has_donor": true}, {"id": 24, "label": "P24", "color": "#00d2ff", "size": 12.1, "score": 41, "cycle_id": 7, "blood": "O", "pra": 2.4, "has_donor": true}, {"id": 25, "label": "P25", "color": "#22c55e", "size": 12.4, "score": 44, "cycle_id": -1, "blood": "O", "pra": 2.6, "has_donor": true}, {"id": 26, "label": "P26", "color": "#22c55e", "size": 11.2, "score": 32, "cycle_id": -1, "blood": "A", "pra": 2.3, "has_donor": true}, {"id": 27, "label": "P27", "color": "#22c55e", "size": 11.1, "score": 31, "cycle_id": -1, "blood": "B", "pra": 93.9, "has_donor": true}, {"id": 28, "label": "P28", "color": "#22c55e", "size": 10.2, "score": 22, "cycle_id": -1, "blood": "AB", "pra": 62.5, "has_donor": true}, {"id": 29, "label": "P29", "color": "#00d2ff", "size": 11.2, "score": 32, "cycle_id": 8, "blood": "A", "pra": 29.2, "has_donor": true}, {"id": 30, "label": "P30", "color": "#eab308", "size": 16.0, "score": 80, "cycle_id": -1, "blood": "O", "pra": 1.4, "has_donor": false}, {"id": 31, "label": "P31", "color": "#eab308", "size": 13.8, "score": 58, "cycle_id": -1, "blood": "O", "pra": 6.0, "has_donor": false}, {"id": 32, "label": "P32", "color": "#00d2ff", "size": 13.5, "score": 55, "cycle_id": 5, "blood": "A", "pra": 4.2, "has_donor": true}, {"id": 33, "label": "P33", "color": "#eab308", "size": 14.8, "score": 68, "cycle_id": -1, "blood": "A", "pra": 28.6, "has_donor": false}, {"id": 34, "label": "P34", "color": "#eab308", "size": 13.7, "score": 57, "cycle_id": -1, "blood": "O", "pra": 59.6, "has_donor": true}, {"id": 35, "label": "P35", "color": "#22c55e", "size": 9.2, "score": 12, "cycle_id": -1, "blood": "B", "pra": 3.4, "has_donor": false}, {"id": 36, "label": "P36", "color": "#eab308", "size": 16.0, "score": 80, "cycle_id": -1, "blood": "O", "pra": 9.2, "has_donor": false}, {"id": 37, "label": "P37", "color": "#00d2ff", "size": 11.9, "score": 39, "cycle_id": 2, "blood": "A", "pra": 22.5, "has_donor": true}, {"id": 38, "label": "P38", "color": "#00d2ff", "size": 13.8, "score": 58, "cycle_id": 3, "blood": "O", "pra": 7.7, "has_donor": true}, {"id": 39, "label": "P39", "color": "#00d2ff", "size": 15.8, "score": 78, "cycle_id": 0, "blood": "A", "pra": 46.5, "has_donor": true}, {"id": 40, "label": "P40", "color": "#22c55e", "size": 10.8, "score": 28, "cycle_id": -1, "blood": "O", "pra": 59.9, "has_donor": true}, {"id": 41, "label": "P41", "color": "#00d2ff", "size": 9.8, "score": 18, "cycle_id": 2, "blood": "O", "pra": 0.2, "has_donor": true}, {"id": 42, "label": "P42", "color": "#22c55e", "size": 10.3, "score": 23, "cycle_id": -1, "blood": "O", "pra": 33.5, "has_donor": true}, {"id": 43, "label": "P43", "color": "#00d2ff", "size": 11.0, "score": 30, "cycle_id": 6, "blood": "A", "pra": 46.7, "has_donor": true}, {"id": 44, "label": "P44", "color": "#22c55e", "size": 13.0, "score": 50, "cycle_id": -1, "blood": "A", "pra": 8.4, "has_donor": false}, {"id": 45, "label": "P45", "color": "#eab308", "size": 15.0, "score": 70, "cycle_id": -1, "blood": "A", "pra": 33.1, "has_donor": false}, {"id": 46, "label": "P46", "color": "#22c55e", "size": 8.0, "score": 0, "cycle_id": -1, "blood": "AB", "pra": 11.4, "has_donor": true}, {"id": 47, "label": "P47", "color": "#22c55e", "size": 12.5, "score": 45, "cycle_id": -1, "blood": "O", "pra": 3.7, "has_donor": true}, {"id": 48, "label": "P48", "color": "#00d2ff", "size": 12.5, "score": 45, "cycle_id": 3, "blood": "O", "pra": 8.4, "has_donor": true}, {"id": 49, "label": "P49", "color": "#00d2ff", "size": 8.6, "score": 6, "cycle_id": 9, "blood": "B", "pra": 3.3, "has_donor": true}, {"id": 50, "label": "P50", "color": "#22c55e", "size": 11.0, "score": 30, "cycle_id": -1, "blood": "O", "pra": 1.0, "has_donor": false}, {"id": 51, "label": "P51", "color": "#00d2ff", "size": 10.3, "score": 23, "cycle_id": 7, "blood": "AB", "pra": 2.3, "has_donor": true}, {"id": 52, "label": "P52", "color": "#ef4444", "size": 16.3, "score": 83, "cycle_id": -1, "blood": "O", "pra": 9.6, "has_donor": true}, {"id": 53, "label": "P53", "color": "#22c55e", "size": 12.4, "score": 44, "cycle_id": -1, "blood": "AB", "pra": 9.1, "has_donor": true}, {"id": 54, "label": "P54", "color": "#22c55e", "size": 12.2, "score": 42, "cycle_id": -1, "blood": "O", "pra": 19.9, "has_donor": true}, {"id": 55, "label": "P55", "color": "#00d2ff", "size": 12.7, "score": 47, "cycle_id": 1, "blood": "B", "pra": 26.6, "has_donor": true}, {"id": 56, "label": "P56", "color": "#22c55e", "size": 9.9, "score": 19, "cycle_id": -1, "blood": "A", "pra": 1.9, "has_donor": false}, {"id": 57, "label": "P57", "color": "#00d2ff", "size": 17.8, "score": 98, "cycle_id": 1, "blood": "AB", "pra": 1.0, "has_donor": true}, {"id": 58, "label": "P58", "color": "#00d2ff", "size": 17.9, "score": 99, "cycle_id": 0, "blood": "O", "pra": 41.2, "has_donor": true}, {"id": 59, "label": "P59", "color": "#00d2ff", "size": 11.8, "score": 38, "cycle_id": 8, "blood": "A", "pra": 0.7, "has_donor": true}];
+const edgesData = [{"from": 0, "to": 2, "in_cycle": false}, {"from": 0, "to": 5, "in_cycle": false}, {"from": 0, "to": 17, "in_cycle": false}, {"from": 0, "to": 23, "in_cycle": false}, {"from": 0, "to": 26, "in_cycle": false}, {"from": 0, "to": 29, "in_cycle": false}, {"from": 0, "to": 32, "in_cycle": false}, {"from": 0, "to": 37, "in_cycle": false}, {"from": 0, "to": 39, "in_cycle": false}, {"from": 0, "to": 56, "in_cycle": false}, {"from": 1, "to": 9, "in_cycle": false}, {"from": 1, "to": 10, "in_cycle": false}, {"from": 1, "to": 15, "in_cycle": false}, {"from": 1, "to": 17, "in_cycle": false}, {"from": 1, "to": 26, "in_cycle": false}, {"from": 1, "to": 28, "in_cycle": false}, {"from": 1, "to": 29, "in_cycle": false}, {"from": 1, "to": 33, "in_cycle": false}, {"from": 1, "to": 35, "in_cycle": false}, {"from": 1, "to": 36, "in_cycle": false}, {"from": 1, "to": 40, "in_cycle": false}, {"from": 1, "to": 41, "in_cycle": false}, {"from": 1, "to": 43, "in_cycle": false}, {"from": 1, "to": 48, "in_cycle": true}, {"from": 1, "to": 49, "in_cycle": false}, {"from": 1, "to": 50, "in_cycle": false}, {"from": 1, "to": 54, "in_cycle": false}, {"from": 1, "to": 57, "in_cycle": false}, {"from": 2, "to": 1, "in_cycle": false}, {"from": 2, "to": 19, "in_cycle": false}, {"from": 2, "to": 23, "in_cycle": true}, {"from": 2, "to": 33, "in_cycle": false}, {"from": 3, "to": 6, "in_cycle": false}, {"from": 3, "to": 7, "in_cycle": false}, {"from": 3, "to": 14, "in_cycle": false}, {"from": 3, "to": 16, "in_cycle": false}, {"from": 3, "to": 21, "in_cycle": false}, {"from": 3, "to": 24, "in_cycle": false}, {"from": 3, "to": 25, "in_cycle": false}, {"from": 3, "to": 26, "in_cycle": false}, {"from": 3, "to": 31, "in_cycle": false}, {"from": 3, "to": 33, "in_cycle": false}, {"from": 3, "to": 34, "in_cycle": false}, {"from": 3, "to": 37, "in_cycle": false}, {"from": 3, "to": 39, "in_cycle": false}, {"from": 3, "to": 50, "in_cycle": false}, {"from": 3, "to": 57, "in_cycle": true}, {"from": 3, "to": 58, "in_cycle": false}, {"from": 6, "to": 5, "in_cycle": false}, {"from": 6, "to": 9, "in_cycle": false}, {"from": 6, "to": 13, "in_cycle": false}, {"from": 6, "to": 22, "in_cycle": false}, {"from": 6, "to": 27, "in_cycle": false}, {"from": 6, "to": 31, "in_cycle": false}, {"from": 6, "to": 36, "in_cycle": false}, {"from": 6, "to": 37, "in_cycle": true}, {"from": 6, "to": 46, "in_cycle": false}, {"from": 6, "to": 58, "in_cycle": false}, {"from": 7, "to": 2, "in_cycle": false}, {"from": 7, "to": 3, "in_cycle": false}, {"from": 7, "to": 9, "in_cycle": false}, {"from": 7, "to": 12, "in_cycle": true}, {"from": 7, "to": 14, "in_cycle": false}, {"from": 7, "to": 16, "in_cycle": false}, {"from": 7, "to": 17, "in_cycle": false}, {"from": 7, "to": 26, "in_cycle": false}, {"from": 7, "to": 29, "in_cycle": false}, {"from": 7, "to": 32, "in_cycle": false}, {"from": 7, "to": 36, "in_cycle": false}, {"from": 7, "to": 42, "in_cycle": false}, {"from": 7, "to": 45, "in_cycle": false}, {"from": 7, "to": 49, "in_cycle": false}, {"from": 7, "to": 50, "in_cycle": false}, {"from": 7, "to": 56, "in_cycle": false}, {"from": 7, "to": 59, "in_cycle": false}, {"from": 8, "to": 2, "in_cycle": false}, {"from": 8, "to": 14, "in_cycle": false}, {"from": 8, "to": 19, "in_cycle": false}, {"from": 8, "to": 46, "in_cycle": false}, {"from": 8, "to": 59, "in_cycle": false}, {"from": 9, "to": 2, "in_cycle": false}, {"from": 9, "to": 4, "in_cycle": false}, {"from": 9, "to": 5, "in_cycle": false}, {"from": 9, "to": 16, "in_cycle": true}, {"from": 9, "to": 23, "in_cycle": false}, {"from": 9, "to": 25, "in_cycle": false}, {"from": 9, "to": 29, "in_cycle": false}, {"from": 9, "to": 45, "in_cycle": false}, {"from": 9, "to": 49, "in_cycle": false}, {"from": 9, "to": 52, "in_cycle": false}, {"from": 9, "to": 56, "in_cycle": false}, {"from": 9, "to": 59, "in_cycle": false}, {"from": 11, "to": 2, "in_cycle": false}, {"from": 11, "to": 5, "in_cycle": false}, {"from": 11, "to": 8, "in_cycle": false}, {"from": 11, "to": 9, "in_cycle": false}, {"from": 11, "to": 13, "in_cycle": false}, {"from": 11, "to": 14, "in_cycle": false}, {"from": 11, "to": 16, "in_cycle": false}, {"from": 11, "to": 22, "in_cycle": false}, {"from": 11, "to": 26, "in_cycle": false}, {"from": 11, "to": 32, "in_cycle": false}, {"from": 11, "to": 37, "in_cycle": false}, {"from": 11, "to": 41, "in_cycle": false}, {"from": 11, "to": 45, "in_cycle": false}, {"from": 11, "to": 46, "in_cycle": false}, {"from": 11, "to": 52, "in_cycle": false}, {"from": 11, "to": 56, "in_cycle": false}, {"from": 12, "to": 2, "in_cycle": false}, {"from": 12, "to": 3, "in_cycle": false}, {"from": 12, "to": 4, "in_cycle": false}, {"from": 12, "to": 5, "in_cycle": false}, {"from": 12, "to": 8, "in_cycle": false}, {"from": 12, "to": 14, "in_cycle": false}, {"from": 12, "to": 15, "in_cycle": true}, {"from": 12, "to": 23, "in_cycle": false}, {"from": 12, "to": 25, "in_cycle": false}, {"from": 12, "to": 27, "in_cycle": false}, {"from": 12, "to": 29, "in_cycle": false}, {"from": 12, "to": 38, "in_cycle": false}, {"from": 12, "to": 43, "in_cycle": false}, {"from": 12, "to": 45, "in_cycle": false}, {"from": 12, "to": 48, "in_cycle": false}, {"from": 12, "to": 50, "in_cycle": false}, {"from": 12, "to": 52, "in_cycle": false}, {"from": 13, "to": 14, "in_cycle": false}, {"from": 13, "to": 19, "in_cycle": false}, {"from": 13, "to": 26, "in_cycle": false}, {"from": 13, "to": 32, "in_cycle": true}, {"from": 13, "to": 45, "in_cycle": false}, {"from": 13, "to": 56, "in_cycle": false}, {"from": 13, "to": 59, "in_cycle": false}, {"from": 14, "to": 13, "in_cycle": true}, {"from": 14, "to": 26, "in_cycle": false}, {"from": 14, "to": 29, "in_cycle": false}, {"from": 14, "to": 37, "in_cycle": false}, {"from": 14, "to": 39, "in_cycle": false}, {"from": 15, "to": 3, "in_cycle": false}, {"from": 15, "to": 7, "in_cycle": true}, {"from": 15, "to": 10, "in_cycle": false}, {"from": 15, "to": 13, "in_cycle": false}, {"from": 15, "to": 18, "in_cycle": false}, {"from": 15, "to": 22, "in_cycle": false}, {"from": 15, "to": 26, "in_cycle": false}, {"from": 15, "to": 28, "in_cycle": false}, {"from": 15, "to": 30, "in_cycle": false}, {"from": 15, "to": 31, "in_cycle": false}, {"from": 15, "to": 32, "in_cycle": false}, {"from": 15, "to": 38, "in_cycle": false}, {"from": 15, "to": 44, "in_cycle": false}, {"from": 15, "to": 54, "in_cycle": false}, {"from": 15, "to": 58, "in_cycle": false}, {"from": 15, "to": 59, "in_cycle": false}, {"from": 16, "to": 14, "in_cycle": false}, {"from": 16, "to": 17, "in_cycle": false}, {"from": 16, "to": 20, "in_cycle": false}, {"from": 16, "to": 26, "in_cycle": false}, {"from": 16, "to": 37, "in_cycle": false}, {"from": 16, "to": 43, "in_cycle": true}, {"from": 16, "to": 44, "in_cycle": false}, {"from": 16, "to": 51, "in_cycle": false}, {"from": 16, "to": 56, "in_cycle": false}, {"from": 17, "to": 9, "in_cycle": false}, {"from": 17, "to": 27, "in_cycle": false}, {"from": 17, "to": 35, "in_cycle": false}, {"from": 17, "to": 49, "in_cycle": false}, {"from": 17, "to": 51, "in_cycle": true}, {"from": 17, "to": 53, "in_cycle": false}, {"from": 17, "to": 55, "in_cycle": false}, {"from": 20, "to": 2, "in_cycle": false}, {"from": 20, "to": 17, "in_cycle": false}, {"from": 20, "to": 18, "in_cycle": false}, {"from": 20, "to": 22, "in_cycle": false}, {"from": 20, "to": 23, "in_cycle": false}, {"from": 20, "to": 24, "in_cycle": false}, {"from": 20, "to": 26, "in_cycle": false}, {"from": 20, "to": 27, "in_cycle": false}, {"from": 20, "to": 32, "in_cycle": false}, {"from": 20, "to": 38, "in_cycle": false}, {"from": 20, "to": 45, "in_cycle": false}, {"from": 20, "to": 50, "in_cycle": false}, {"from": 20, "to": 55, "in_cycle": false}, {"from": 20, "to": 56, "in_cycle": false}, {"from": 20, "to": 58, "in_cycle": false}, {"from": 20, "to": 59, "in_cycle": false}, {"from": 21, "to": 23, "in_cycle": false}, {"from": 22, "to": 5, "in_cycle": false}, {"from": 22, "to": 6, "in_cycle": false}, {"from": 22, "to": 13, "in_cycle": false}, {"from": 22, "to": 16, "in_cycle": false}, {"from": 22, "to": 32, "in_cycle": false}, {"from": 22, "to": 36, "in_cycle": false}, {"from": 22, "to": 38, "in_cycle": false}, {"from": 22, "to": 42, "in_cycle": false}, {"from": 22, "to": 58, "in_cycle": true}, {"from": 22, "to": 59, "in_cycle": false}, {"from": 23, "to": 49, "in_cycle": true}, {"from": 23, "to": 55, "in_cycle": false}, {"from": 24, "to": 13, "in_cycle": false}, {"from": 24, "to": 17, "in_cycle": true}, {"from": 24, "to": 26, "in_cycle": false}, {"from": 24, "to": 29, "in_cycle": false}, {"from": 24, "to": 32, "in_cycle": false}, {"from": 24, "to": 45, "in_cycle": false}, {"from": 24, "to": 59, "in_cycle": false}, {"from": 25, "to": 27, "in_cycle": false}, {"from": 25, "to": 55, "in_cycle": false}, {"from": 26, "to": 2, "in_cycle": false}, {"from": 26, "to": 14, "in_cycle": false}, {"from": 26, "to": 29, "in_cycle": false}, {"from": 26, "to": 43, "in_cycle": false}, {"from": 26, "to": 59, "in_cycle": false}, {"from": 28, "to": 1, "in_cycle": false}, {"from": 28, "to": 4, "in_cycle": false}, {"from": 28, "to": 18, "in_cycle": false}, {"from": 28, "to": 19, "in_cycle": false}, {"from": 28, "to": 22, "in_cycle": false}, {"from": 28, "to": 29, "in_cycle": false}, {"from": 28, "to": 41, "in_cycle": false}, {"from": 28, "to": 45, "in_cycle": false}, {"from": 28, "to": 55, "in_cycle": false}, {"from": 29, "to": 13, "in_cycle": false}, {"from": 29, "to": 37, "in_cycle": false}, {"from": 29, "to": 59, "in_cycle": true}, {"from": 32, "to": 1, "in_cycle": false}, {"from": 32, "to": 13, "in_cycle": false}, {"from": 32, "to": 14, "in_cycle": true}, {"from": 32, "to": 26, "in_cycle": false}, {"from": 32, "to": 33, "in_cycle": false}, {"from": 32, "to": 39, "in_cycle": false}, {"from": 32, "to": 46, "in_cycle": false}, {"from": 34, "to": 28, "in_cycle": false}, {"from": 34, "to": 51, "in_cycle": false}, {"from": 37, "to": 4, "in_cycle": false}, {"from": 37, "to": 5, "in_cycle": false}, {"from": 37, "to": 6, "in_cycle": false}, {"from": 37, "to": 12, "in_cycle": false}, {"from": 37, "to": 13, "in_cycle": false}, {"from": 37, "to": 17, "in_cycle": false}, {"from": 37, "to": 18, "in_cycle": false}, {"from": 37, "to": 22, "in_cycle": false}, {"from": 37, "to": 24, "in_cycle": false}, {"from": 37, "to": 29, "in_cycle": false}, {"from": 37, "to": 38, "in_cycle": false}, {"from": 37, "to": 41, "in_cycle": true}, {"from": 37, "to": 45, "in_cycle": false}, {"from": 37, "to": 46, "in_cycle": false}, {"from": 37, "to": 58, "in_cycle": false}, {"from": 37, "to": 59, "in_cycle": false}, {"from": 38, "to": 1, "in_cycle": true}, {"from": 38, "to": 3, "in_cycle": false}, {"from": 38, "to": 5, "in_cycle": false}, {"from": 38, "to": 14, "in_cycle": false}, {"from": 38, "to": 29, "in_cycle": false}, {"from": 38, "to": 32, "in_cycle": false}, {"from": 38, "to": 33, "in_cycle": false}, {"from": 38, "to": 37, "in_cycle": false}, {"from": 38, "to": 45, "in_cycle": false}, {"from": 39, "to": 5, "in_cycle": false}, {"from": 39, "to": 9, "in_cycle": false}, {"from": 39, "to": 13, "in_cycle": false}, {"from": 39, "to": 14, "in_cycle": false}, {"from": 39, "to": 17, "in_cycle": false}, {"from": 39, "to": 18, "in_cycle": false}, {"from": 39, "to": 19, "in_cycle": false}, {"from": 39, "to": 22, "in_cycle": true}, {"from": 39, "to": 27, "in_cycle": false}, {"from": 39, "to": 37, "in_cycle": false}, {"from": 39, "to": 38, "in_cycle": false}, {"from": 39, "to": 41, "in_cycle": false}, {"from": 39, "to": 59, "in_cycle": false}, {"from": 40, "to": 3, "in_cycle": false}, {"from": 40, "to": 4, "in_cycle": false}, {"from": 40, "to": 5, "in_cycle": false}, {"from": 40, "to": 6, "in_cycle": false}, {"from": 40, "to": 8, "in_cycle": false}, {"from": 40, "to": 12, "in_cycle": false}, {"from": 40, "to": 14, "in_cycle": false}, {"from": 40, "to": 17, "in_cycle": false}, {"from": 40, "to": 29, "in_cycle": false}, {"from": 40, "to": 31, "in_cycle": false}, {"from": 40, "to": 45, "in_cycle": false}, {"from": 40, "to": 46, "in_cycle": false}, {"from": 41, "to": 2, "in_cycle": false}, {"from": 41, "to": 4, "in_cycle": false}, {"from": 41, "to": 5, "in_cycle": false}, {"from": 41, "to": 6, "in_cycle": true}, {"from": 41, "to": 15, "in_cycle": false}, {"from": 41, "to": 17, "in_cycle": false}, {"from": 41, "to": 18, "in_cycle": false}, {"from": 41, "to": 25, "in_cycle": false}, {"from": 41, "to": 26, "in_cycle": false}, {"from": 41, "to": 27, "in_cycle": false}, {"from": 41, "to": 31, "in_cycle": false}, {"from": 41, "to": 38, "in_cycle": false}, {"from": 41, "to": 43, "in_cycle": false}, {"from": 41, "to": 47, "in_cycle": false}, {"from": 41, "to": 49, "in_cycle": false}, {"from": 41, "to": 50, "in_cycle": false}, {"from": 42, "to": 3, "in_cycle": false}, {"from": 42, "to": 4, "in_cycle": false}, {"from": 42, "to": 9, "in_cycle": false}, {"from": 42, "to": 24, "in_cycle": false}, {"from": 42, "to": 33, "in_cycle": false}, {"from": 42, "to": 37, "in_cycle": false}, {"from": 42, "to": 43, "in_cycle": false}, {"from": 42, "to": 45, "in_cycle": false}, {"from": 42, "to": 46, "in_cycle": false}, {"from": 42, "to": 48, "in_cycle": false}, {"from": 42, "to": 49, "in_cycle": false}, {"from": 42, "to": 56, "in_cycle": false}, {"from": 43, "to": 4, "in_cycle": false}, {"from": 43, "to": 8, "in_cycle": false}, {"from": 43, "to": 9, "in_cycle": true}, {"from": 43, "to": 16, "in_cycle": false}, {"from": 43, "to": 17, "in_cycle": false}, {"from": 43, "to": 23, "in_cycle": false}, {"from": 43, "to": 33, "in_cycle": false}, {"from": 43, "to": 39, "in_cycle": false}, {"from": 43, "to": 50, "in_cycle": false}, {"from": 43, "to": 59, "in_cycle": false}, {"from": 46, "to": 2, "in_cycle": false}, {"from": 46, "to": 6, "in_cycle": false}, {"from": 46, "to": 13, "in_cycle": false}, {"from": 46, "to": 14, "in_cycle": false}, {"from": 46, "to": 16, "in_cycle": false}, {"from": 46, "to": 36, "in_cycle": false}, {"from": 46, "to": 48, "in_cycle": false}, {"from": 46, "to": 49, "in_cycle": false}, {"from": 46, "to": 59, "in_cycle": false}, {"from": 47, "to": 23, "in_cycle": false}, {"from": 48, "to": 6, "in_cycle": false}, {"from": 48, "to": 9, "in_cycle": false}, {"from": 48, "to": 15, "in_cycle": false}, {"from": 48, "to": 17, "in_cycle": false}, {"from": 48, "to": 18, "in_cycle": false}, {"from": 48, "to": 23, "in_cycle": false}, {"from": 48, "to": 24, "in_cycle": false}, {"from": 48, "to": 26, "in_cycle": false}, {"from": 48, "to": 31, "in_cycle": false}, {"from": 48, "to": 32, "in_cycle": false}, {"from": 48, "to": 36, "in_cycle": false}, {"from": 48, "to": 37, "in_cycle": false}, {"from": 48, "to": 38, "in_cycle": true}, {"from": 48, "to": 42, "in_cycle": false}, {"from": 48, "to": 45, "in_cycle": false}, {"from": 49, "to": 2, "in_cycle": true}, {"from": 49, "to": 4, "in_cycle": false}, {"from": 49, "to": 16, "in_cycle": false}, {"from": 49, "to": 27, "in_cycle": false}, {"from": 49, "to": 33, "in_cycle": false}, {"from": 49, "to": 34, "in_cycle": false}, {"from": 49, "to": 43, "in_cycle": false}, {"from": 49, "to": 50, "in_cycle": false}, {"from": 49, "to": 58, "in_cycle": false}, {"from": 49, "to": 59, "in_cycle": false}, {"from": 51, "to": 2, "in_cycle": false}, {"from": 51, "to": 4, "in_cycle": false}, {"from": 51, "to": 6, "in_cycle": false}, {"from": 51, "to": 9, "in_cycle": false}, {"from": 51, "to": 14, "in_cycle": false}, {"from": 51, "to": 15, "in_cycle": false}, {"from": 51, "to": 18, "in_cycle": false}, {"from": 51, "to": 22, "in_cycle": false}, {"from": 51, "to": 24, "in_cycle": true}, {"from": 51, "to": 31, "in_cycle": false}, {"from": 51, "to": 32, "in_cycle": false}, {"from": 51, "to": 42, "in_cycle": false}, {"from": 51, "to": 43, "in_cycle": false}, {"from": 51, "to": 48, "in_cycle": false}, {"from": 51, "to": 49, "in_cycle": false}, {"from": 51, "to": 50, "in_cycle": false}, {"from": 51, "to": 59, "in_cycle": false}, {"from": 52, "to": 49, "in_cycle": false}, {"from": 52, "to": 55, "in_cycle": false}, {"from": 53, "to": 1, "in_cycle": false}, {"from": 53, "to": 13, "in_cycle": false}, {"from": 53, "to": 14, "in_cycle": false}, {"from": 53, "to": 17, "in_cycle": false}, {"from": 53, "to": 32, "in_cycle": false}, {"from": 53, "to": 46, "in_cycle": false}, {"from": 53, "to": 56, "in_cycle": false}, {"from": 54, "to": 5, "in_cycle": false}, {"from": 54, "to": 8, "in_cycle": false}, {"from": 54, "to": 9, "in_cycle": false}, {"from": 54, "to": 14, "in_cycle": false}, {"from": 54, "to": 16, "in_cycle": false}, {"from": 54, "to": 17, "in_cycle": false}, {"from": 54, "to": 18, "in_cycle": false}, {"from": 54, "to": 19, "in_cycle": false}, {"from": 54, "to": 46, "in_cycle": false}, {"from": 54, "to": 48, "in_cycle": false}, {"from": 54, "to": 52, "in_cycle": false}, {"from": 54, "to": 59, "in_cycle": false}, {"from": 55, "to": 3, "in_cycle": true}, {"from": 55, "to": 4, "in_cycle": false}, {"from": 55, "to": 15, "in_cycle": false}, {"from": 55, "to": 16, "in_cycle": false}, {"from": 55, "to": 18, "in_cycle": false}, {"from": 55, "to": 23, "in_cycle": false}, {"from": 55, "to": 25, "in_cycle": false}, {"from": 55, "to": 31, "in_cycle": false}, {"from": 55, "to": 37, "in_cycle": false}, {"from": 55, "to": 42, "in_cycle": false}, {"from": 55, "to": 47, "in_cycle": false}, {"from": 55, "to": 48, "in_cycle": false}, {"from": 55, "to": 52, "in_cycle": false}, {"from": 55, "to": 58, "in_cycle": false}, {"from": 57, "to": 46, "in_cycle": false}, {"from": 57, "to": 49, "in_cycle": false}, {"from": 57, "to": 55, "in_cycle": true}, {"from": 58, "to": 0, "in_cycle": false}, {"from": 58, "to": 2, "in_cycle": false}, {"from": 58, "to": 3, "in_cycle": false}, {"from": 58, "to": 5, "in_cycle": false}, {"from": 58, "to": 17, "in_cycle": false}, {"from": 58, "to": 19, "in_cycle": false}, {"from": 58, "to": 23, "in_cycle": false}, {"from": 58, "to": 26, "in_cycle": false}, {"from": 58, "to": 39, "in_cycle": true}, {"from": 58, "to": 45, "in_cycle": false}, {"from": 58, "to": 46, "in_cycle": false}, {"from": 58, "to": 53, "in_cycle": false}, {"from": 58, "to": 59, "in_cycle": false}, {"from": 59, "to": 23, "in_cycle": false}, {"from": 59, "to": 29, "in_cycle": true}, {"from": 59, "to": 45, "in_cycle": false}, {"from": 59, "to": 46, "in_cycle": false}];
+
+const nodes = new vis.DataSet(nodesData);
+const edges = new vis.DataSet(edgesData);
+
+const container = document.getElementById('network');
+const data = { nodes: nodes, edges: edges };
+const options = {
+    nodes: { shape: 'dot', font: { color: '#fff', size: 11 }, borderWidth: 2, shadow: true },
+    edges: { smooth: { type: 'continuous' }, arrows: { to: { scaleFactor: 0.5 } }, shadow: true },
+    physics: { stabilization: { iterations: 1000 }, barnesHut: { gravitationalConstant: -2000 } }
+};
+
+const network = new vis.Network(container, data, options);
+network.once('stabilizationIterationsDone', () => {
+    network.setOptions({ physics: { enabled: false } });
+    network.fit();
+});
+
+function showGraph() {
+    document.getElementById('graphSection').style.display = 'block';
+    document.getElementById('statsSection').style.display = 'none';
+    document.getElementById('databaseSection').style.display = 'none';
+    document.querySelectorAll('.btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+}
+
+function showStats() {
+    document.getElementById('graphSection').style.display = 'none';
+    document.getElementById('statsSection').style.display = 'block';
+    document.getElementById('databaseSection').style.display = 'none';
+    document.querySelectorAll('.btn').forEach((b, i) => b.classList.toggle('active', i === 1));
+    
+    const urgencyScores = nodesData.map(n => n.score);
+    const ctx = document.getElementById('histChart');
+    if(!ctx.chart) {
+        ctx.chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['<50 (Stable)', '50-80 (Grave)', '>80 (Critique)'],
+                datasets: [{
+                    data: [
+                        urgencyScores.filter(s => s < 50).length,
+                        urgencyScores.filter(s => s >= 50 && s <= 80).length,
+                        urgencyScores.filter(s => s > 80).length
+                    ],
+                    backgroundColor: ['#22c55e', '#eab308', '#ef4444'],
+                    borderColor: '#000',
+                    borderWidth: 2
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+}
+
+function showDatabase() {
+    document.getElementById('graphSection').style.display = 'none';
+    document.getElementById('statsSection').style.display = 'none';
+    document.getElementById('databaseSection').style.display = 'block';
+    document.querySelectorAll('.btn').forEach((b, i) => b.classList.toggle('active', i === 2));
+}
+
+// Chart score
+const urgencyScores = nodesData.map(n => n.score);
+const scoreCtx = document.getElementById('scoreChart');
+new Chart(scoreCtx, {
+    type: 'bar',
+    data: {
+        labels: nodesData.slice(0, 15).map(n => 'P' + n.id),
+        datasets: [{
+            label: 'Urgence',
+            data: nodesData.slice(0, 15).map(n => n.score),
+            backgroundColor: nodesData.slice(0, 15).map(n => n.color),
+            borderColor: '#333',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { max: 100, ticks: {{ color: '#888' }} } },
+        plugins: {{ legend: {{ display: false }} }}
+    }
+});
+</script>
+
+</body>
+</html>
